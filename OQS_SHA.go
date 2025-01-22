@@ -4,100 +4,39 @@
 package oqs
 
 import (
+	"crypto/hmac"
 	"crypto/sha256"
 	"crypto/sha3"
 	"crypto/sha512"
+	"errors"
 	"fmt"
+	"hash"
 )
 
-// SHA224Context holds the state for SHA-224 incremental hashing.
-type SHA224Context struct {
-	ctx     interface{} // Placeholder for internal state
-	dataLen uint64      // Current number of bytes in data
-	data    [128]byte   // Unprocessed data buffer
+// Context structure for SHA operations (SHA-224, SHA-256, etc.)
+type SHAContext struct {
+	Algorithm string
+	State     interface{}
+	DataLen   uint64
+	Data      []byte
 }
 
-// SHA256Context holds the state for SHA-256 incremental hashing.
-type SHA256Context struct {
-	ctx     interface{} // Placeholder for internal state
-	dataLen uint64      // Current number of bytes in data
-	data    [128]byte   // Unprocessed data buffer
+// SHA2Functions encapsulates SHA-2 specific operations.
+type SHA2Functions struct {
+	Hash   func(output []byte, input []byte)
+	HMAC   func(key []byte, data []byte, output []byte) error
+	Init   func(ctx *SHAContext)
+	Update func(ctx *SHAContext, input []byte)
+	Finish func(ctx *SHAContext, output []byte)
 }
 
-// SHA384Context holds the state for SHA-384 incremental hashing.
-type SHA384Context struct {
-	ctx     interface{} // Placeholder for internal state
-	dataLen uint64      // Current number of bytes in data
-	data    [128]byte   // Unprocessed data buffer
-}
-
-// SHA512Context holds the state for SHA-512 incremental hashing.
-type SHA512Context struct {
-	ctx     interface{} // Placeholder for internal state
-	dataLen uint64      // Current number of bytes in data
-	data    [128]byte   // Unprocessed data buffer
-}
-
-// SHA3_256Context holds the state for SHA3-256 incremental hashing.
-type SHA3_256Context struct {
-	ctx *sha3.State // Placeholder for internal state
-}
-
-// SHA3_384Context holds the state for SHA3-384 incremental hashing.
-type SHA3_384Context struct {
-	ctx *sha3.State // Placeholder for internal state
-}
-
-// SHA3_512Context holds the state for SHA3-512 incremental hashing.
-type SHA3_512Context struct {
-	ctx *sha3.State // Placeholder for internal state
-}
-
-// SHAKE128Context holds the state for SHAKE-128 incremental hashing.
-type SHAKE128Context struct {
-	ctx *sha3.State // Placeholder for internal state
-}
-
-// SHAKE256Context holds the state for SHAKE-256 incremental hashing.
-type SHAKE256Context struct {
-	ctx *sha3.State // Placeholder for internal state
-}
-
-// SHA2Callbacks defines the callback functions for SHA-2 operations.
-type SHA2Callbacks struct {
-	SHA256            func(output []byte, input []byte)
-	SHA256IncInit     func(state *SHA256Context)
-	SHA256IncFinalize func(out []byte, state *SHA256Context, in []byte)
-	SHA384            func(output []byte, input []byte)
-	SHA384IncInit     func(state *SHA384Context)
-	SHA384IncFinalize func(out []byte, state *SHA384Context, in []byte)
-	SHA512            func(output []byte, input []byte)
-	SHA512IncInit     func(state *SHA512Context)
-	SHA512IncFinalize func(out []byte, state *SHA512Context, in []byte)
-}
-
-// SHA3Callbacks defines the callback functions for SHA-3 operations.
-type SHA3Callbacks struct {
-	SHA3_256              func(output []byte, input []byte)
-	SHA3_256_Inc_Init     func(state *SHA3_256Context)
-	SHA3_256_Inc_Absorb   func(state *SHA3_256Context, input []byte)
-	SHA3_256_Inc_Finalize func(output []byte, state *SHA3_256Context)
-	SHA3_384              func(output []byte, input []byte)
-	SHA3_512              func(output []byte, input []byte)
-}
-
-// Global variables to hold the current callbacks
-var currentSHA2Callbacks *SHA2Callbacks
-var currentSHA3Callbacks *SHA3Callbacks
-
-// SetCallbacks sets the callback functions for SHA-2 operations.
-func SetSHA2Callbacks(newCallbacks *SHA2Callbacks) {
-	currentSHA2Callbacks = newCallbacks
-}
-
-// SetSHA3Callbacks sets the callback functions for SHA-3 operations.
-func SetSHA3Callbacks(newCallbacks *SHA3Callbacks) {
-	currentSHA3Callbacks = newCallbacks
+// SHA3Functions encapsulates SHA-3 specific operations.
+type SHA3Functions struct {
+	Hash   func(output []byte, input []byte)
+	HMAC   func(key []byte, data []byte, output []byte) error
+	Init   func(ctx *SHAContext)
+	Update func(ctx *SHAContext, input []byte)
+	Finish func(ctx *SHAContext, output []byte)
 }
 
 // SHA256 computes the SHA-256 hash of the input.
@@ -119,55 +58,80 @@ func SHA3_256(output []byte, input []byte) {
 	copy(output, hash.Sum(nil))
 }
 
-// Incremental functions for SHA-256
-func SHA256IncInit(state *SHA256Context) {
-	state.dataLen = 0
-}
-
-func SHA256IncFinalize(out []byte, state *SHA256Context, in []byte) {
-	SHA256(out, in)
-}
-
-// Incremental functions for SHA3-256
-func SHA3_256_Inc_Init(state *SHA3_256Context) {
-	state.ctx = sha3.New256()
-}
-
-func SHA3_256_Inc_Absorb(state *SHA3_256Context, input []byte) {
-	if state.ctx == nil {
-		return
+// HMACSHA256 computes the HMAC for SHA-256.
+func HMACSHA256(key []byte, data []byte, output []byte) error {
+	if len(output) < sha256.Size {
+		return errors.New("output buffer is too small")
 	}
-	state.ctx.Write(input)
+	mac := hmac.New(sha256.New, key)
+	mac.Write(data)
+	copy(output, mac.Sum(nil))
+	return nil
 }
 
-func SHA3_256_Inc_Finalize(output []byte, state *SHA3_256Context) {
-	if state.ctx == nil {
-		return
+// HMACSHA3_256 computes the HMAC for SHA3-256.
+func HMACSHA3_256(key []byte, data []byte, output []byte) error {
+	h := sha3.New256()
+	mac := hmac.New(func() hash.Hash { return h }, key)
+	mac.Write(data)
+	copy(output, mac.Sum(nil))
+	return nil
+}
+
+// SHA Context Initialization
+func SHA256Init(ctx *SHAContext) {
+	ctx.State = sha256.New()
+	ctx.Data = make([]byte, 0)
+	ctx.Algorithm = "SHA-256"
+}
+
+func SHA3_256Init(ctx *SHAContext) {
+	ctx.State = sha3.New256()
+	ctx.Data = make([]byte, 0)
+	ctx.Algorithm = "SHA3-256"
+}
+
+// Incremental updates for SHA
+func SHAUpdate(ctx *SHAContext, input []byte) {
+	if ctx.State != nil {
+		if h, ok := ctx.State.(hash.Hash); ok {
+			h.Write(input)
+			ctx.DataLen += uint64(len(input))
+		}
 	}
-	copy(output, state.ctx.Sum(nil))
 }
 
-// Example usage
-func RunExample() {
-	// Set the SHA-2 callbacks
-	SetSHA2Callbacks(&SHA2Callbacks{
-		SHA256: SHA256,
-		SHA512: SHA512,
-	})
+// Finish SHA computation
+func SHAFinish(ctx *SHAContext, output []byte) {
+	if ctx.State != nil {
+		if h, ok := ctx.State.(hash.Hash); ok {
+			copy(output, h.Sum(nil))
+		}
+	}
+}
 
-	// Set the SHA-3 callbacks
-	SetSHA3Callbacks(&SHA3Callbacks{
-		SHA3_256: SHA3_256,
-	})
-
-	// Example usage of SHA256
-	output := make([]byte, 32) // SHA-256 produces a 32-byte hash
-	input := []byte("Hello, World!")
-	currentSHA2Callbacks.SHA256(output, input)
+// Example Usage
+func SHAExampleUsage() {
+	// Standard Hash Usage
+	output := make([]byte, sha256.Size)
+	SHA256(output, []byte("Hello, World!"))
 	fmt.Printf("SHA-256: %x\n", output)
 
-	// Example usage of SHA3-256
-	outputSHA3 := make([]byte, 32) // SHA3-256 produces a 32-byte hash
-	currentSHA3Callbacks.SHA3_256(outputSHA3, input)
-	fmt.Printf("SHA3-256: %x\n", outputSHA3)
+	// HMAC Usage
+	hmacOutput := make([]byte, sha256.Size)
+	key := []byte("secret-key")
+	data := []byte("message")
+	if err := HMACSHA256(key, data, hmacOutput); err != nil {
+		fmt.Println("HMAC Error:", err)
+	} else {
+		fmt.Printf("HMAC-SHA-256: %x\n", hmacOutput)
+	}
+
+	// Incremental Hash Usage
+	ctx := &SHAContext{}
+	SHA256Init(ctx)
+	SHAUpdate(ctx, []byte("Hello"))
+	SHAUpdate(ctx, []byte(", World!"))
+	SHAFinish(ctx, output)
+	fmt.Printf("Incremental SHA-256: %x\n", output)
 }

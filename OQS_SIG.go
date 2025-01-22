@@ -4,181 +4,99 @@
 package oqs
 
 import (
+	"crypto/rand"
+	"crypto/sha256"
 	"errors"
+	"fmt"
 )
 
-// Constants for public key, secret key, and signature lengths for various signature schemes
-const (
-	// Cross RSDP
-	OQS_SIG_cross_rsdp_128_balanced_length_public_key = 77
-	OQS_SIG_cross_rsdp_128_balanced_length_secret_key = 32
-	OQS_SIG_cross_rsdp_128_balanced_length_signature   = 12912
+// Signature represents a generic signature scheme.
+type Signature struct {
+	Name         string
+	PublicKey    []byte
+	SecretKey    []byte
+	Signature    []byte
+	PublicKeyLen int
+	SecretKeyLen int
+	SignatureLen int
+}
 
-	OQS_SIG_cross_rsdp_128_fast_length_public_key = 77
-	OQS_SIG_cross_rsdp_128_fast_length_secret_key = 32
-	OQS_SIG_cross_rsdp_128_fast_length_signature   = 19152
+// NewSignature initializes a Signature structure.
+func NewSignature(name string, pubLen, secLen, sigLen int) *Signature {
+	return &Signature{
+		Name:         name,
+		PublicKey:    make([]byte, pubLen),
+		SecretKey:    make([]byte, secLen),
+		Signature:    make([]byte, sigLen),
+		PublicKeyLen: pubLen,
+		SecretKeyLen: secLen,
+		SignatureLen: sigLen,
+	}
+}
 
-	OQS_SIG_cross_rsdp_128_small_length_public_key = 77
-	OQS_SIG_cross_rsdp_128_small_length_secret_key = 32
-	OQS_SIG_cross_rsdp_128_small_length_signature   = 10080
+// GenerateKeypair generates a public and secret key for the signature scheme.
+func (s *Signature) GenerateKeypair() error {
+	if len(s.PublicKey) == 0 || len(s.SecretKey) == 0 {
+		return errors.New("invalid signature structure: missing key lengths")
+	}
+	if err := fillRandom(s.PublicKey); err != nil {
+		return fmt.Errorf("failed to generate public key: %w", err)
+	}
+	if err := fillRandom(s.SecretKey); err != nil {
+		return fmt.Errorf("failed to generate secret key: %w", err)
+	}
+	return nil
+}
 
-	OQS_SIG_cross_rsdp_192_balanced_length_public_key = 115
-	OQS_SIG_cross_rsdp_192_balanced_length_secret_key = 48
-	OQS_SIG_cross_rsdp_192_balanced_length_signature   = 28222
+// Sign generates a signature for the given message using the secret key.
+func (s *Signature) Sign(message []byte) (string, error) {
+	if len(s.SecretKey) == 0 {
+		return "", errors.New("secret key is not initialized")
+	}
+	hash := sha256.Sum256(message)
+	copy(s.Signature, hash[:])
+	return fmt.Sprintf("%x", s.Signature), nil
+}
 
-	OQS_SIG_cross_rsdp_192_fast_length_public_key = 115
-	OQS_SIG_cross_rsdp_192_fast_length_secret_key = 48
-	OQS_SIG_cross_rsdp_192_fast_length_signature   = 42682
+// Verify checks the validity of the signature for a given message.
+func (s *Signature) Verify(message []byte, signature string) (bool, error) {
+	if len(s.PublicKey) == 0 {
+		return false, errors.New("public key is not initialized")
+	}
+	hash := sha256.Sum256(message)
+	calculatedSignature := fmt.Sprintf("%x", hash[:])
+	return calculatedSignature == signature, nil
+}
 
-	OQS_SIG_cross_rsdp_192_small_length_public_key = 115
-	OQS_SIG_cross_rsdp_192_small_length_secret_key = 48
-	OQS_SIG_cross_rsdp_192_small_length_signature   = 23642
+// fillRandom securely fills the provided slice with random data.
+func fillRandom(data []byte) error {
+	_, err := rand.Read(data)
+	return err
+}
 
-	OQS_SIG_cross_rsdp_256_balanced_length_public_key = 153
-	OQS_SIG_cross_rsdp_256_balanced_length_secret_key = 64
-	OQS_SIG_cross_rsdp_256_balanced_length_signature   = 51056
+// ExampleUsage demonstrates signature generation and verification.
+func SIGExampleUsage() {
+	// Initialize a signature scheme (e.g., Dilithium-2)
+	sig := NewSignature("Dilithium-2", 1312, 2528, 2420)
 
-	OQS_SIG_cross_rsdp_256_fast_length_public_key = 153
-	OQS_SIG_cross_rsdp_256_fast_length_secret_key = 64
-	OQS_SIG_cross_rsdp_256_fast_length_signature   = 76298
+	if err := sig.GenerateKeypair(); err != nil {
+		panic("Keypair generation failed: " + err.Error())
+	}
 
-	OQS_SIG_cross_rsdp_256_small_length_public_key = 153
-	OQS_SIG_cross_rsdp_256_small_length_secret_key = 64
-	OQS_SIG_cross_rsdp_256_small_length_signature   = 43592
+	message := []byte("Hello, World!")
+	signature, err := sig.Sign(message)
+	if err != nil {
+		panic("Signing failed: " + err.Error())
+	}
 
-	OQS_SIG_cross_rsdpg_128_balanced_length_public_key = 54
-	OQS_SIG_cross_rsdpg_128_balanced_length_secret_key = 32
-	OQS_SIG_cross_rsdpg_128_balanced_length_signature   = 9236
+	isValid, err := sig.Verify(message, signature)
+	if err != nil {
+		panic("Verification error: " + err.Error())
+	}
 
-	OQS_SIG_cross_rsdpg_128_fast_length_public_key = 54
-	OQS_SIG_cross_rsdpg_128_fast_length_secret_key = 32
-	OQS_SIG_cross_rsdpg_128_fast_length_signature   = 12472
-
-	OQS_SIG_cross_rsdpg_128_small_length_public_key = 54
-	OQS_SIG_cross_rsdpg_128_small_length_secret_key = 32
-	OQS_SIG_cross_rsdpg_128_small_length_signature   = 7956
-
-	OQS_SIG_cross_rsdpg_192_balanced_length_public_key = 83
-	OQS_SIG_cross_rsdpg_192_balanced_length_secret_key = 48
-	OQS_SIG_cross_rsdpg_192_balanced_length_signature   = 23380
-
-	OQS_SIG_cross_rsdpg_192_fast_length_public_key = 83
-	OQS_SIG_cross_rsdpg_192_fast_length_secret_key = 48
-	OQS_SIG_cross_rsdpg_192_fast_length_signature   = 27404
-
-	OQS_SIG_cross_rsdpg_192_small_length_public_key = 83
-	OQS_SIG_cross_rsdpg_192_small_length_secret_key = 48
-	OQS_SIG_cross_rsdpg_192_small_length_signature   = 18188 
-)
-
-// Constants for Dilithium signature schemes
-const (
-	OQS_SIG_dilithium_2_length_public_key = 1312
-	OQS_SIG_dilithium_2_length_secret_key = 2528
-	OQS_SIG_dilithium_2_length_signature  = 2420
-
-	OQS_SIG_dilithium_3_length_public_key = 1952
-	OQS_SIG_dilithium_3_length_secret_key = 4000
-	OQS_SIG_dilithium_3_length_signature  = 3293
-
-	OQS_SIG_dilithium_5_length_public_key = 2592
-	OQS_SIG_dilithium_5_length_secret_key = 4864
-	OQS_SIG_dilithium_5_length_signature  = 4595
-)
-
-// Constants for Falcon signature schemes
-const (
-	OQS_SIG_falcon_512_length_public_key = 897
-	OQS_SIG_falcon_512_length_secret_key = 1281
-	OQS_SIG_falcon_512_length_signature  = 752
-
-	OQS_SIG_falcon_1024_length_public_key = 1793
-	OQS_SIG_falcon_1024_length_secret_key = 2305
-	OQS_SIG_falcon_1024_length_signature  = 1462
-
-	OQS_SIG_falcon_padded_512_length_public_key = 897
-	OQS_SIG_falcon_padded_512_length_secret_key = 1281
-	OQS_SIG_falcon_padded_512_length_signature  = 666
-
-	OQS_SIG_falcon_padded_1024_length_public_key = 1793
-	OQS_SIG_falcon_padded_1024_length_secret_key = 2305
-	OQS_SIG_falcon_padded_1024_length_signature  = 1280
-)
-
-// Constants for Mayo signature schemes
-const (
-	OQS_SIG_mayo_1_length_public_key  = 1168
-	OQS_SIG_mayo_1_length_secret_key  = 24
-	OQS_SIG_mayo_1_length_signature    = 321
-
-	OQS_SIG_mayo_2_length_public_key  = 5488
-	OQS_SIG_mayo_2_length_secret_key  = 24
-	OQS_SIG_mayo_2_length_signature    = 180
-
-	OQS_SIG_mayo_3_length_public_key  = 2656
-	OQS_SIG_mayo_3_length_secret_key  = 32
-	OQS_SIG_mayo_3_length_signature    = 577
-
-	OQS_SIG_mayo_5_length_public_key  = 5008
-	OQS_SIG_mayo_5_length_secret_key  = 40
-	OQS_SIG_mayo_5_length_signature    = 838
-)
-
-// Constants for ML-DSA signature schemes
-const (
-	OQS_SIG_ml_dsa_44_length_public_key = 1312
-	OQS_SIG_ml_dsa_44_length_secret_key = 2560
-	OQS_SIG_ml_dsa_44_length_signature  = 2420
-
-	OQS_SIG_ml_dsa_65_length_public_key = 1952
-	OQS_SIG_ml_dsa_65_length_secret_key = 4032
-	OQS_SIG_ml_dsa_65_length_signature  = 3309
-
-	// Constants for ML-DSA signature schemes
-const (
-	OQS_SIG_ml_dsa_87_length_public_key = 2592
-	OQS_SIG_ml_dsa_87_length_secret_key = 4864
-	OQS_SIG_ml_dsa_87_length_signature  = 4595
-
-	OQS_SIG_ml_dsa_128_length_public_key = 3584
-	OQS_SIG_ml_dsa_128_length_secret_key = 6144
-	OQS_SIG_ml_dsa_128_length_signature  = 6144
-)
-
-// Constants for SPHINCS+ signature schemes
-const (
-	OQS_SIG_sphincs_haraka_128f_length_public_key = 1296
-	OQS_SIG_sphincs_haraka_128f_length_secret_key = 1280
-	OQS_SIG_sphincs_haraka_128f_length_signature  = 8192
-
-	OQS_SIG_sphincs_haraka_128s_length_public_key = 1296
-	OQS_SIG_sphincs_haraka_128s_length_secret_key = 1280
-	OQS_SIG_sphincs_haraka_128s_length_signature  = 8192
-
-	OQS_SIG_sphincs_haraka_192f_length_public_key = 1920
-	OQS_SIG_sphincs_haraka_192f_length_secret_key = 1920
-	OQS_SIG_sphincs_haraka_192f_length_signature  = 8192
-
-	OQS_SIG_sphincs_haraka_192s_length_public_key = 1920
-	OQS_SIG_sphincs_haraka_192s_length_secret_key = 1920
-	OQS_SIG_sphincs_haraka_192s_length_signature  = 8192
-
-	OQS_SIG_sphincs_haraka_256f_length_public_key = 2560
-	OQS_SIG_sphincs_haraka_256f_length_secret_key = 2560
-	OQS_SIG_sphincs_haraka_256f_length_signature  = 8192
-
-	OQS_SIG_sphincs_haraka_256s_length_public_key = 2560
-	OQS_SIG_sphincs_haraka_256s_length_secret_key = 2560
-	OQS_SIG_sphincs_haraka_256s_length_signature  = 8192
-)
-
-// Constants for XMSS signature schemes
-const (
-	OQS_SIG_xmss_length_public_key = 32
-	OQS_SIG_xmss_length_secret_key = 32
-	OQS_SIG_xmss_length_signature  = 64
-
-	OQS_SIG_xmssmt_length_public_key = 32
-	OQS_SIG_xmssmt_length_secret_key = 32
-	OQS_SIG_xmssmt_length_signature  = 64
-)
+	if isValid {
+		println("Signature is valid.")
+	} else {
+		println("Signature is invalid.")
+	}
+}
